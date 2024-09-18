@@ -24,74 +24,101 @@ app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}/`);
 });
 
-async function main(maxPages = 50) {
-  // Initialized with the first webpage to visit
-  const paginationURLsToVisit = ["https://www.scrapingcourse.com/ecommerce/"];
-  const visitedURLs = [];
+// Delay function to add pauses between requests
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  // This will store an array of objects where each object contains the page URL and the associated links found
+// Fetch page with retry logic
+async function fetchPage(url) {
+  let retries = 3;
+  while (retries > 0) {
+    try {
+      const response = await axios.get(url, { maxRedirects: 5 });
+      return response.data;
+    } catch (err) {
+      //console.error(`Error fetching page: ${url}`, err.message);
+      retries--;
+      if (retries === 0) {
+        //console.error(`Failed to fetch page after multiple attempts: ${url}`);
+        return null;
+      }
+      await delay(1000);
+    }
+  }
+}
+
+async function main(maxPages = 5000) {
+  const paginationURLsToVisit = [
+    "https://en.wikipedia.org/wiki/Battle_of_Havana_(1748)?wprov=sfti1",
+  ];
+  const visitedURLs = [];
   const pageLinkMapping = [];
 
-  // Iterating until the queue is empty or the iteration limit is hit
   while (paginationURLsToVisit.length !== 0 && visitedURLs.length <= maxPages) {
-    // The current webpage to crawl
     const currentURL = paginationURLsToVisit.pop();
 
-    // Prevent re-visiting the same URL
     if (visitedURLs.includes(currentURL)) {
       continue;
     }
 
-    // Retrieving the HTML content from the current URL
-    try {
-      const pageHTML = await axios.get(currentURL);
-
-      // Adding the current webpage to the list of visited URLs
-      visitedURLs.push(currentURL);
-
-      // Initializing cheerio on the current webpage
-      const $ = cheerio.load(pageHTML.data);
-
-      // Retrieving all the <a> tags with href attributes (standard link elements)
-      const pageLinks = [];
-      $("a[href]").each((index, element) => {
-        const link = $(element).attr("href");
-
-        // Only add valid, non-anchor links (e.g., ignore #hash fragments)
-        if (link && !link.startsWith("#") && !link.startsWith("javascript:")) {
-          const absoluteURL = new URL(link, currentURL).href; // Resolve relative URLs
-
-          // Add to the queue if it's a valid new URL and not yet visited
-          if (
-            !visitedURLs.includes(absoluteURL) &&
-            !paginationURLsToVisit.includes(absoluteURL)
-          ) {
-            paginationURLsToVisit.push(absoluteURL);
-          }
-
-          pageLinks.push(absoluteURL); // Store the link found on the current page
-        }
-      });
-
-      // If any links were found, store them with the page URL
-      if (pageLinks.length > 0) {
-        pageLinkMapping.push({
-          page: currentURL,
-          links: pageLinks,
-        });
-      }
-    } catch (err) {
-      console.error(`Error fetching page: ${currentURL}`, err.message);
+    const pageHTML = await fetchPage(currentURL);
+    if (!pageHTML) {
+      continue;
     }
+
+    visitedURLs.push(currentURL);
+
+    const $ = cheerio.load(pageHTML);
+
+    console.log(visitedURLs.length / maxPages);
+
+    const pageLinks = [];
+    $("a[href]").each((index, element) => {
+      const link = $(element).attr("href");
+      if (
+        link &&
+        !link.startsWith("#") &&
+        !link.startsWith("javascript:") &&
+        link.length < 2000
+      ) {
+        const absoluteURL = new URL(link, currentURL).href;
+
+        // Skip if URL is from a problematic domain or path
+        if (
+          !visitedURLs.includes(absoluteURL) &&
+          !paginationURLsToVisit.includes(absoluteURL) &&
+          !absoluteURL.includes("Special:") &&
+          !absoluteURL.includes("User:") &&
+          !absoluteURL.includes("Help:") &&
+          !absoluteURL.includes("Main_Page") &&
+          !absoluteURL.includes(
+            "github.com/creativecommons/global-network-strategy"
+          )
+        ) {
+          paginationURLsToVisit.push(absoluteURL);
+        }
+
+        pageLinks.push(absoluteURL);
+      }
+    });
+
+    if (pageLinks.length > 0) {
+      pageLinkMapping.push({
+        page: currentURL,
+        links: pageLinks,
+      });
+    }
+
+    await delay(1000);
   }
 
-  // Append the crawl results to a JSON file
   try {
     fs.writeFileSync(
       "pageLinkMapping.json",
       JSON.stringify(pageLinkMapping, null, 2)
     );
-    console.log("Data successfully appended to pageLinkMapping.json");
+    console.log("Data successfully written to pageLinkMapping.json");
   } catch (err) {
     console.error("Error writing to JSON file", err.message);
   }
@@ -105,7 +132,6 @@ main()
     process.exit(0);
   })
   .catch((e) => {
-    // Logging the error message
     console.error(e);
     process.exit(1);
   });
