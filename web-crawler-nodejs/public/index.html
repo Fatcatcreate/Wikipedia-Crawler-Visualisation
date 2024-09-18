@@ -23,12 +23,12 @@
 
     <script>
       // Fetch the pageLinkMapping.json file from the server
-      fetch('pageLinkMapping.json')
+      fetch("pageLinkMapping.json")
         .then((response) => response.json())
         .then((pageLinkMapping) => {
           // Prepare the nodes and edges for Vis.js
-          const nodes = [];
-          const edges = [];
+          const nodes = new vis.DataSet();
+          const edges = new vis.DataSet();
 
           // Map to store node ids
           const urlToIdMap = new Map();
@@ -40,7 +40,7 @@
             const pathname = urlObj.pathname;
 
             // Remove leading/trailing slashes and return the last part
-            const segments = pathname.split('/').filter(Boolean); 
+            const segments = pathname.split("/").filter(Boolean);
             return segments.length > 0 ? segments[segments.length - 1] : url;
           }
 
@@ -49,40 +49,46 @@
             if (!urlToIdMap.has(url)) {
               const label = extractLabel(url); // Get only the last part of the URL
               urlToIdMap.set(url, idCounter);
-              nodes.push({ id: idCounter, label: label });
+              nodes.add({ id: idCounter, label: label });
               idCounter++;
             }
             return urlToIdMap.get(url);
           }
 
-          // Populate the graph data
-          pageLinkMapping.forEach((pageData) => {
-            const pageId = addNode(pageData.page);
+          // Helper function to add edges when a node is clicked
+          function addEdgesForNode(nodeId) {
+            const pageData = pageLinkMapping.find(
+              (page) => urlToIdMap.get(page.page) === nodeId
+            );
+            if (pageData) {
+              pageData.links.forEach((link) => {
+                const linkId = addNode(link);
+                if (
+                  !edges.get({
+                    filter: (item) =>
+                      item.from === nodeId && item.to === linkId,
+                  }).length
+                ) {
+                  edges.add({ from: nodeId, to: linkId, color: "red" }); // Add connection in red
+                }
+              });
+            }
+          }
 
-            pageData.links.forEach((link) => {
-              const linkId = addNode(link);
-              edges.push({ from: pageId, to: linkId });
-            });
-          });
-
-          // Optional: Highlight edges that represent the path followed by the crawler
-          edges.forEach((edge) => {
-            edge.color = "red"; // Highlight the crawl path in red
-          });
+          // Populate the first 3 nodes and show their connections
+          const initialNodes = pageLinkMapping
+            .slice(0, 10)
+            .map((pageData) => addNode(pageData.page));
+          initialNodes.forEach((nodeId) => addEdgesForNode(nodeId)); // Automatically expand the first 3 nodes
 
           // Initialize the network
           const container = document.getElementById("mynetwork");
-          const data = {
-            nodes: new vis.DataSet(nodes),
-            edges: new vis.DataSet(edges),
-          };
+          const data = { nodes, edges };
           const options = {
             nodes: {
               shape: "dot",
               size: 16,
-              font: {
-                size: 14,
-              },
+              font: { size: 14 },
             },
             edges: {
               arrows: { to: true },
@@ -90,13 +96,31 @@
             },
             physics: {
               enabled: true,
+              solver: "barnesHut",
+              barnesHut: {
+                gravitationalConstant: -5000,
+                springConstant: 0.005,
+              },
+              stabilization: {
+                iterations: 200,
+                fit: true,
+              },
             },
           };
+
           const network = new vis.Network(container, data, options);
+
+          // Event listener for node click to expand connections
+          network.on("click", function (params) {
+            if (params.nodes.length > 0) {
+              const clickedNodeId = params.nodes[0];
+              addEdgesForNode(clickedNodeId); // Add connections when clicked
+            }
+          });
         })
         .catch((error) => {
-          console.error('Error loading pageLinkMapping.json:', error);
+          console.error("Error loading pageLinkMapping.json:", error);
         });
     </script>
   </body>
-</html> 
+</html>
