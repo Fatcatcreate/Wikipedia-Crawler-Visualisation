@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
-const port = 3000; // You can change this to any port you like
+const port = 3000;
 
 // Serve static files from the "public" directory
 app.use(express.static(path.join(__dirname, "public")));
@@ -24,93 +24,115 @@ app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}/`);
 });
 
-// Delay function to add pauses between requests
+// Delay function for retries or pauses between batches
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Fetch page with retry logic
+// Fetch page with retry logic and exponential backoff
 async function fetchPage(url) {
   let retries = 3;
+  let delayTime = 1000; // Start with 1 second delay
   while (retries > 0) {
     try {
       const response = await axios.get(url, { maxRedirects: 5 });
       return response.data;
     } catch (err) {
-      //console.error(`Error fetching page: ${url}`, err.message);
       retries--;
       if (retries === 0) {
-        //console.error(`Failed to fetch page after multiple attempts: ${url}`);
+        console.error(`Failed to fetch page after multiple attempts: ${url}`);
         return null;
       }
-      await delay(1000);
+      await delay(delayTime);
+      delayTime *= 2; // Exponential backoff
     }
   }
 }
 
-async function main(maxPages = 5000) {
-  const paginationURLsToVisit = [
+// Helper function to validate and normalize URLs
+function normalizeURL(link, baseURL) {
+  try {
+    const urlObj = new URL(link, baseURL); // Convert relative URL to absolute
+    return urlObj.href;
+  } catch (error) {
+    console.error(`Invalid URL: ${link}`);
+    return null; // Return null for invalid URLs
+  }
+}
+
+// Main crawling function with parallel requests
+async function main(maxPages = 5000, concurrency = 10) {
+  const paginationURLsToVisit = new Set([
     "https://en.wikipedia.org/wiki/Battle_of_Havana_(1748)?wprov=sfti1",
-  ];
-  const visitedURLs = [];
+  ]);
+  const visitedURLs = new Set();
   const pageLinkMapping = [];
 
-  while (paginationURLsToVisit.length !== 0 && visitedURLs.length <= maxPages) {
-    const currentURL = paginationURLsToVisit.pop();
+  const crawlBatch = async (urls) => {
+    const promises = Array.from(urls).map(async (currentURL) => {
+      if (!visitedURLs.has(currentURL) && visitedURLs.size < maxPages) {
+        const pageHTML = await fetchPage(currentURL);
+        if (!pageHTML) return;
 
-    if (visitedURLs.includes(currentURL)) {
-      continue;
-    }
+        visitedURLs.add(currentURL);
+        const $ = cheerio.load(pageHTML);
 
-    const pageHTML = await fetchPage(currentURL);
-    if (!pageHTML) {
-      continue;
-    }
+        const pageLinks = [];
+        $("a[href]").each((index, element) => {
+          const link = $(element).attr("href");
+          if (
+            link &&
+            !link.startsWith("#") &&
+            !link.startsWith("javascript:") &&
+            link.length < 2000
+          ) {
+            const absoluteURL = normalizeURL(link, currentURL);
 
-    visitedURLs.push(currentURL);
+            // Skip invalid or problematic URLs
+            if (
+              absoluteURL &&
+              !visitedURLs.has(absoluteURL) &&
+              !paginationURLsToVisit.has(absoluteURL) &&
+              !absoluteURL.includes("Special:") &&
+              !absoluteURL.includes("User:") &&
+              !absoluteURL.includes("Help:") &&
+              !absoluteURL.includes("Main_Page") &&
+              !absoluteURL.includes("php") &&
+              !absoluteURL.includes("github.com")
+            ) {
+              paginationURLsToVisit.add(absoluteURL);
+            }
 
-    const $ = cheerio.load(pageHTML);
+            if (absoluteURL) {
+              pageLinks.push(absoluteURL);
+            }
+          }
+        });
 
-    console.log(visitedURLs.length / maxPages);
-
-    const pageLinks = [];
-    $("a[href]").each((index, element) => {
-      const link = $(element).attr("href");
-      if (
-        link &&
-        !link.startsWith("#") &&
-        !link.startsWith("javascript:") &&
-        link.length < 2000
-      ) {
-        const absoluteURL = new URL(link, currentURL).href;
-
-        // Skip if URL is from a problematic domain or path
-        if (
-          !visitedURLs.includes(absoluteURL) &&
-          !paginationURLsToVisit.includes(absoluteURL) &&
-          !absoluteURL.includes("Special:") &&
-          !absoluteURL.includes("User:") &&
-          !absoluteURL.includes("Help:") &&
-          !absoluteURL.includes("Main_Page") &&
-          !absoluteURL.includes(
-            "github.com/creativecommons/global-network-strategy"
-          )
-        ) {
-          paginationURLsToVisit.push(absoluteURL);
+        if (pageLinks.length > 0) {
+          pageLinkMapping.push({
+            page: currentURL,
+            links: pageLinks,
+          });
         }
-
-        pageLinks.push(absoluteURL);
       }
     });
 
-    if (pageLinks.length > 0) {
-      pageLinkMapping.push({
-        page: currentURL,
-        links: pageLinks,
-      });
-    }
+    await Promise.all(promises);
+  };
 
-    await delay(1000);
+  // Run batches of crawling tasks
+  while (paginationURLsToVisit.size > 0 && visitedURLs.size < maxPages) {
+    const urlsToVisit = new Set(
+      Array.from(paginationURLsToVisit).slice(0, concurrency)
+    );
+    urlsToVisit.forEach((url) => paginationURLsToVisit.delete(url));
+
+    await crawlBatch(urlsToVisit);
+    console.log(`${visitedURLs.size}/${maxPages} pages crawled`);
+
+    // Adding a brief delay between batches to avoid overwhelming the server
+    await delay(500);
   }
 
   try {
@@ -127,7 +149,7 @@ async function main(maxPages = 5000) {
 }
 
 main()
-  .then((result) => {
+  .then(() => {
     console.log("Crawl completed.");
     process.exit(0);
   })
