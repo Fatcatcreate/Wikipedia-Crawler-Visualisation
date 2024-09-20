@@ -14,27 +14,11 @@
         width: 100%;
         height: 800px;
         border: 1px solid lightgray;
-        margin-bottom: 20px;
-      }
-      #sliderContainer {
-        margin-bottom: 20px;
-      }
-      #sliderLabel {
-        margin-right: 10px;
       }
     </style>
   </head>
   <body>
     <h2>Web Crawler Visualization</h2>
-
-    <!-- Slider to control number of nodes -->
-    <div id="sliderContainer">
-      <label for="nodeSlider" id="sliderLabel"
-        >Number of nodes to display: 10</label
-      >
-      <input type="range" id="nodeSlider" min="10" max="5000" value="10" />
-    </div>
-
     <div id="mynetwork"></div>
 
     <script>
@@ -54,6 +38,8 @@
           function extractLabel(url) {
             const urlObj = new URL(url);
             const pathname = urlObj.pathname;
+
+            // Remove leading/trailing slashes and return the last part
             const segments = pathname.split("/").filter(Boolean);
             return segments.length > 0 ? segments[segments.length - 1] : url;
           }
@@ -69,7 +55,7 @@
             return urlToIdMap.get(url);
           }
 
-          // Helper function to add edges for a node
+          // Helper function to add edges when a node is clicked
           function addEdgesForNode(nodeId) {
             const pageData = pageLinkMapping.find(
               (page) => urlToIdMap.get(page.page) === nodeId
@@ -88,27 +74,16 @@
               });
             }
           }
+              // Filter out pages with fewer than 3 connections (links)
+          const filteredPageLinkMapping = pageLinkMapping.filter(
+            (pageData) => pageData.links.length >= 3
+          );
 
-          // Function to update the graph based on the number of nodes
-          function updateGraph(nodeCount) {
-            nodes.clear();
-            edges.clear();
-            urlToIdMap.clear();
-            idCounter = 1;
-
-            // Filter out pages with fewer than 3 connections (links)
-            const filteredPageLinkMapping = pageLinkMapping.filter(
-              (pageData) => pageData.links.length >= 3
-            );
-
-            // Add the specified number of nodes
-            const initialNodes = filteredPageLinkMapping
-              .slice(0, nodeCount)
-              .map((pageData) => addNode(pageData.page));
-
-            // Add edges for each node
-            initialNodes.forEach((nodeId) => addEdgesForNode(nodeId));
-          }
+          // Populate the first 3 nodes and show their connections
+          const initialNodes = pageLinkMapping
+            .slice(0, 50)
+            .map((pageData) => addNode(pageData.page));
+          initialNodes.forEach((nodeId) => addEdgesForNode(nodeId)); // Automatically expand the first 3 nodes
 
           // Initialize the network
           const container = document.getElementById("mynetwork");
@@ -146,19 +121,6 @@
               addEdgesForNode(clickedNodeId); // Add connections when clicked
             }
           });
-
-          // Add event listener to the slider
-          const slider = document.getElementById("nodeSlider");
-          const sliderLabel = document.getElementById("sliderLabel");
-
-          slider.addEventListener("input", (event) => {
-            const nodeCount = event.target.value;
-            sliderLabel.textContent = `Number of nodes to display: ${nodeCount}`;
-            updateGraph(nodeCount);
-          });
-
-          // Initialize the graph with the default value of 50 nodes
-          updateGraph(10);
         })
         .catch((error) => {
           console.error("Error loading pageLinkMapping.json:", error);

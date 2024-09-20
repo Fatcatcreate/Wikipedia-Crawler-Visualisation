@@ -61,7 +61,7 @@ function normalizeURL(link, baseURL) {
 }
 
 // Main crawling function with parallel requests
-async function main(maxPages = 5000, concurrency = 10) {
+async function main(maxPages = 10000, concurrency = 10) {
   const paginationURLsToVisit = new Set([
     "https://en.wikipedia.org/wiki/Battle_of_Havana_(1748)?wprov=sfti1",
   ]);
@@ -88,16 +88,16 @@ async function main(maxPages = 5000, concurrency = 10) {
           ) {
             const absoluteURL = normalizeURL(link, currentURL);
 
-            // Skip invalid or problematic URLs
+            // Filter to only add URLs that contain "wikipedia"
             if (
               absoluteURL &&
+              absoluteURL.includes("wikipedia") && // <-- Filter for Wikipedia URLs
               !visitedURLs.has(absoluteURL) &&
               !paginationURLsToVisit.has(absoluteURL) &&
               !absoluteURL.includes("Special:") &&
               !absoluteURL.includes("User:") &&
               !absoluteURL.includes("Help:") &&
               !absoluteURL.includes("Main_Page") &&
-              !absoluteURL.includes("php") &&
               !absoluteURL.includes("github.com")
             ) {
               paginationURLsToVisit.add(absoluteURL);
@@ -157,3 +157,5 @@ main()
     console.error(e);
     process.exit(1);
   });
+
+
