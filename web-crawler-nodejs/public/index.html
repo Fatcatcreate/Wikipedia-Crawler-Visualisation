@@ -5,10 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Web Crawler Visualization</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
-    <link
-      href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css"
-      rel="stylesheet"
-    />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" />
     <style>
       #mynetwork {
         width: 100%;
@@ -20,42 +17,29 @@
   <body>
     <h2>Web Crawler Visualization</h2>
     <div id="mynetwork"></div>
-
     <script>
-      // Fetch the pageLinkMapping.json file from the server
       fetch("pageLinkMapping.json")
         .then((response) => response.json())
         .then((pageLinkMapping) => {
-          // Prepare the nodes and edges for Vis.js
           const nodes = new vis.DataSet();
           const edges = new vis.DataSet();
-
-          // Map to store node ids
           const urlToIdMap = new Map();
           let idCounter = 1;
-
-          // Helper function to extract the last meaningful part of the URL
           function extractLabel(url) {
             const urlObj = new URL(url);
             const pathname = urlObj.pathname;
-
-            // Remove leading/trailing slashes and return the last part
             const segments = pathname.split("/").filter(Boolean);
             return segments.length > 0 ? segments[segments.length - 1] : url;
           }
-
-          // Helper function to add a node with extracted label
           function addNode(url) {
             if (!urlToIdMap.has(url)) {
-              const label = extractLabel(url); // Get only the last part of the URL
+              const label = extractLabel(url);
               urlToIdMap.set(url, idCounter);
               nodes.add({ id: idCounter, label: label });
               idCounter++;
             }
             return urlToIdMap.get(url);
           }
-
-          // Helper function to add edges when a node is clicked
           function addEdgesForNode(nodeId) {
             const pageData = pageLinkMapping.find(
               (page) => urlToIdMap.get(page.page) === nodeId
@@ -69,23 +53,18 @@
                       item.from === nodeId && item.to === linkId,
                   }).length
                 ) {
-                  edges.add({ from: nodeId, to: linkId, color: "red" }); // Add connection in red
+                  edges.add({ from: nodeId, to: linkId, color: "red" });
                 }
               });
             }
           }
-              // Filter out pages with fewer than 3 connections (links)
           const filteredPageLinkMapping = pageLinkMapping.filter(
             (pageData) => pageData.links.length >= 3
           );
-
-          // Populate the first 3 nodes and show their connections
           const initialNodes = pageLinkMapping
             .slice(0, 50)
             .map((pageData) => addNode(pageData.page));
-          initialNodes.forEach((nodeId) => addEdgesForNode(nodeId)); // Automatically expand the first 3 nodes
-
-          // Initialize the network
+          initialNodes.forEach((nodeId) => addEdgesForNode(nodeId));
           const container = document.getElementById("mynetwork");
           const data = { nodes, edges };
           const options = {
@@ -111,14 +90,11 @@
               },
             },
           };
-
           const network = new vis.Network(container, data, options);
-
-          // Event listener for node click to expand connections
           network.on("click", function (params) {
             if (params.nodes.length > 0) {
               const clickedNodeId = params.nodes[0];
-              addEdgesForNode(clickedNodeId); // Add connections when clicked
+              addEdgesForNode(clickedNodeId);
             }
           });
         })
